@@ -55,3 +55,13 @@ $('load-basic').onclick=async()=>{
   if($('sheet').disabled){button.disabled=false;button.textContent='기본부문 다시 불러오기';}
  }
 };
+
+// Independent scenario comparison: preserve results as snapshots, not references.
+const comparisons=[];
+function renderComparisons(){
+ $('compare-status').textContent=comparisons.length?`${comparisons.length}개 시나리오 저장됨`:'저장된 비교 결과가 없습니다.';
+ $('compare-rows').replaceChildren(...comparisons.map((r,i)=>{const tr=document.createElement('tr');[r.name,fmt(r.demand),fmt(r.production),fmt(r.imports),fmt(r.valueAdded),fmt(r.multiplier)].forEach(v=>tr.append(text('td',v)));const td=document.createElement('td'),b=text('button','삭제');b.type='button';b.onclick=()=>{comparisons.splice(i,1);renderComparisons();};td.append(b);tr.append(td);return tr;}));
+ const max=Math.max(1,...comparisons.map(r=>r.multiplier));$('compare-bars').replaceChildren(...comparisons.map(r=>{const d=text('div',r.name+' · '+fmt(r.multiplier)+'배');d.className='bar';const track=document.createElement('div');track.className='track';const fill=document.createElement('div');fill.className='fill';fill.style.width=(r.multiplier/max*100)+'%';track.append(fill);d.append(track);return d;}));
+}
+$('save-comparison').onclick=()=>{if(!result){$('compare-status').textContent='먼저 파급효과를 계산하세요.';return;}const name=$('compare-name').value.trim()||'시나리오 '+(comparisons.length+1);comparisons.push({name,demand:result.demand,production:result.production,imports:result.imports,valueAdded:result.valueAdded,multiplier:result.multiplier});$('compare-name').value='';renderComparisons();};
+$('clear-comparison').onclick=()=>{comparisons.length=0;renderComparisons();};
