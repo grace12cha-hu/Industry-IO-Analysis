@@ -67,3 +67,14 @@ def simulate(payload):
     result.sort(key=lambda r:r['production'],reverse=True)
     return emit({'demand':float(f.sum()),'production':float(x.sum()),'imports':float(m.sum()),
                  'valueAdded':float(v.sum()),'multiplier':float(x.sum()/f.sum()),'rows':result})
+
+
+def linkage():
+    if not valid: raise ValueError('먼저 데이터를 검증해야 합니다.')
+    # Standard normalized column/row sums of the domestic production inducement matrix.
+    n=len(codes)
+    col=L.sum(axis=0); row=L.sum(axis=1); grand=L.sum()/n
+    items=[{'code':codes[i],'name':names[i], 'power':float(col[i]/grand),
+            'sensitivity':float(row[i]/grand), 'columnSum':float(col[i]),'rowSum':float(row[i])}
+           for i in range(n)]
+    return emit({'rows':items,'mean':float(grand),'count':n})

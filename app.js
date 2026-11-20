@@ -8,11 +8,11 @@ function options(el,list){el.replaceChildren(...list.map(x=>{const o=document.cr
 function invalidate(){result=null;$('results').hidden=true;}
 async function load(buffer){
  invalidate();basket=[];renderBasket();
- for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount'])$(id).disabled=true;
+ for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount','linkage-run','linkage-search'])$(id).disabled=true;
  if(worker)worker.terminate();for(const p of requests.values())p.reject(Error('데이터 다시 로드'));requests.clear();startWorker();
  try{const info=await call('init',buffer);sectors=info.sectors;options($('sector'),sectors);$('sector-search').value='';$('row-search').value='';$('col-search').value='';$('sheet').replaceChildren(...info.sheets.map(s=>{const o=text('option',s);o.value=s;return o;}));
  $('validation').textContent=JSON.stringify(info.residuals,null,2)+'\n최대 절대 잔차: 허용값 1e-8 미만';
- for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount'])$(id).disabled=false;
+ for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount','linkage-run','linkage-search'])$(id).disabled=false;
  await explore();$('status').textContent='준비 완료 · '+sectors.length+'개 부문 · '+info.sheets.length+'개 시트 · 계수 검증 통과';
  }catch(e){$('status').textContent='준비 실패: '+e.message+' — 새로고침 후 재시도하세요.';}
 }
@@ -65,3 +65,23 @@ function renderComparisons(){
 }
 $('save-comparison').onclick=()=>{if(!result){$('compare-status').textContent='먼저 파급효과를 계산하세요.';return;}const name=$('compare-name').value.trim()||'시나리오 '+(comparisons.length+1);comparisons.push({name,demand:result.demand,production:result.production,imports:result.imports,valueAdded:result.valueAdded,multiplier:result.multiplier});$('compare-name').value='';renderComparisons();};
 $('clear-comparison').onclick=()=>{comparisons.length=0;renderComparisons();};
+
+// Basic-sector normalized linkage indices. Do not present these as official aggregate classification tables.
+let linkageRows=[];
+function renderLinkage(){
+ const q=$('linkage-search').value.trim().toLowerCase(),sort=$('linkage-sort').value;
+ const rows=linkageRows.filter(r=>(r.code+' '+r.name).toLowerCase().includes(q));
+ rows.sort((a,b)=>sort==='name'?a.code.localeCompare(b.code):b[sort]-a[sort]);
+ $('linkage-rows').replaceChildren(...rows.map(r=>{const tr=document.createElement('tr');
+  for(const v of [r.code,r.name,fmt(r.power),fmt(r.sensitivity),fmt(r.columnSum),fmt(r.rowSum)])tr.append(text('td',v));
+  return tr;}));
+}
+$('linkage-run').onclick=async()=>{
+ $('linkage-run').disabled=true;$('linkage-status').textContent='연관도 계산 중…';
+ try{const data=await call('linkage',null);linkageRows=data.rows;renderLinkage();
+ $('linkage-status').textContent=`${data.count}개 기본부문 계산 완료 · 생산유발계수 평균 열합 ${fmt(data.mean)}`;
+ }catch(e){$('linkage-status').textContent='계산 실패: '+e.message;}
+ finally{$('linkage-run').disabled=false;}
+};
+$('linkage-search').oninput=renderLinkage;
+$('linkage-sort').onchange=renderLinkage;
