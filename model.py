@@ -13,9 +13,18 @@ def initialize(raw):
     wb.close()
     sheets = list(book)
     base = book['국산투입계수(Ad)']
-    codes = [str(c) for c in base[4][2:] if c is not None and str(c).isdigit() and int(str(c)) < 9000]
-    if len(codes) != 380 or len(set(codes)) != len(codes):
-        raise ValueError('이 버전은 첨부된 2023년 380부문 워크북 구조만 지원합니다.')
+    # 각 분류의 산업코드는 숫자뿐 아니라 A, C01 등 문자도 포함함.
+    # 원자료 행과 열에 동시에 존재하는 산업코드의 연속 구간만 채택.
+    row_codes = {str(r[0]) for r in base[6:] if len(r)>1 and r[0] is not None}
+    codes=[]
+    for c in base[4][2:]:
+        code=str(c) if c is not None else ''
+        if code not in row_codes or code in codes:
+            if codes: break
+            continue
+        codes.append(code)
+    if len(codes)<10 or len(set(codes))!=len(codes):
+        raise ValueError('산업코드 인식 실패: 해당 분류 엑셀의 행/열 구조를 확인하세요.')
     nm = {str(r[0]): str(r[1]) for r in base[6:]}
     names = [nm[c] for c in codes]
     def matrix(s):
