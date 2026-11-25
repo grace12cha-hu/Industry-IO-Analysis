@@ -43,10 +43,11 @@ async function loadDefaultWorkbook(){
   $('status').textContent='준비 실패: '+error.message+' — 연결 상태를 확인하고 새로고침하세요.';
  }
 }
-$('classification').onchange=()=>{currentClass=$('classification').value;$('load-basic').disabled=false;$('load-basic').textContent='선택 분류 불러오기';$('status').textContent='분류를 변경했습니다. 선택 분류 불러오기를 누르세요.';for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount','linkage-run','linkage-search'])$(id).disabled=true;invalidate();};
+$('classification').onchange=()=>{currentClass=$('classification').value;basket=[];sectors=[];rowChoices=[];cells=[];renderBasket();linkageRows=[];$('linkage-rows').replaceChildren();$('linkage-status').textContent='선택한 분류를 먼저 불러오세요.';$('load-basic').disabled=false;$('load-basic').textContent='선택 분류 불러오기';$('status').textContent='분류를 변경했습니다. 선택 분류 불러오기를 누르세요.';for(const id of ['sheet','row','sector','add','run','row-search','col-search','sector-search','amount','linkage-run','linkage-search'])$(id).disabled=true;invalidate();};
 $('load-basic').onclick=async()=>{
  const button=$('load-basic');
  button.disabled=true;
+ $('classification').disabled=true;
  button.textContent='불러오는 중…';
  try {
   await loadDefaultWorkbook();
@@ -55,6 +56,7 @@ $('load-basic').onclick=async()=>{
   button.textContent=ready?'선택 분류 불러오기 완료':'선택 분류 다시 불러오기';
   button.disabled=ready;
  }finally{
+  $('classification').disabled=false;
   if($('sheet').disabled){button.disabled=false;button.textContent='선택 분류 다시 불러오기';}
  }
 };
@@ -63,13 +65,13 @@ $('load-basic').onclick=async()=>{
 const comparisons=[];
 function renderComparisons(){
  $('compare-status').textContent=comparisons.length?`${comparisons.length}개 시나리오 저장됨`:'저장된 비교 결과가 없습니다.';
- $('compare-rows').replaceChildren(...comparisons.map((r,i)=>{const tr=document.createElement('tr');[r.name,fmt(r.demand),fmt(r.production),fmt(r.imports),fmt(r.valueAdded),fmt(r.multiplier)].forEach(v=>tr.append(text('td',v)));const td=document.createElement('td'),b=text('button','삭제');b.type='button';b.onclick=()=>{comparisons.splice(i,1);renderComparisons();};td.append(b);tr.append(td);return tr;}));
+ $('compare-rows').replaceChildren(...comparisons.map((r,i)=>{const tr=document.createElement('tr');[r.name,r.className,r.sectorNames,fmt(r.demand),fmt(r.production),fmt(r.imports),fmt(r.valueAdded),fmt(r.multiplier),fmt(100*r.imports/r.demand),fmt(100*r.valueAdded/r.demand)].forEach(v=>tr.append(text('td',v)));const td=document.createElement('td'),b=text('button','삭제');b.type='button';b.onclick=()=>{comparisons.splice(i,1);renderComparisons();};td.append(b);tr.append(td);return tr;}));
  const max=Math.max(1,...comparisons.map(r=>r.multiplier));$('compare-bars').replaceChildren(...comparisons.map(r=>{const d=text('div',r.name+' · '+fmt(r.multiplier)+'배');d.className='bar';const track=document.createElement('div');track.className='track';const fill=document.createElement('div');fill.className='fill';fill.style.width=(r.multiplier/max*100)+'%';track.append(fill);d.append(track);return d;}));
 }
-$('save-comparison').onclick=()=>{if(!result){$('compare-status').textContent='먼저 파급효과를 계산하세요.';return;}const name=$('compare-name').value.trim()||'시나리오 '+(comparisons.length+1);comparisons.push({name,demand:result.demand,production:result.production,imports:result.imports,valueAdded:result.valueAdded,multiplier:result.multiplier});$('compare-name').value='';renderComparisons();};
+$('save-comparison').onclick=()=>{if(!result){$('compare-status').textContent='먼저 파급효과를 계산하세요.';return;}const name=$('compare-name').value.trim()||'시나리오 '+(comparisons.length+1);comparisons.push({name,className:$('classification').selectedOptions[0].textContent,sectorNames:basket.map(s=>s.name).join(', '),demand:result.demand,production:result.production,imports:result.imports,valueAdded:result.valueAdded,multiplier:result.multiplier});$('compare-name').value='';renderComparisons();};
 $('clear-comparison').onclick=()=>{comparisons.length=0;renderComparisons();};
 
-// Basic-sector normalized linkage indices. Do not present these as official aggregate classification tables.
+// Normalized linkage indices for the currently loaded official classification.
 let linkageRows=[];
 function renderLinkage(){
  const q=$('linkage-search').value.trim().toLowerCase(),sort=$('linkage-sort').value;
@@ -82,9 +84,18 @@ function renderLinkage(){
 $('linkage-run').onclick=async()=>{
  $('linkage-run').disabled=true;$('linkage-status').textContent='연관도 계산 중…';
  try{const data=await call('linkage',null);linkageRows=data.rows;renderLinkage();
- $('linkage-status').textContent=`${data.count}개 기본부문 계산 완료 · 생산유발계수 평균 열합 ${fmt(data.mean)}`;
+ $('linkage-status').textContent=`${$('classification').selectedOptions[0].textContent} · ${data.count}개 부문 계산 완료 · 생산유발계수 평균 열합 ${fmt(data.mean)}`;
  }catch(e){$('linkage-status').textContent='계산 실패: '+e.message;}
  finally{$('linkage-run').disabled=false;}
 };
 $('linkage-search').oninput=renderLinkage;
 $('linkage-sort').onchange=renderLinkage;
+
+function exportCSV(name,rows){const u=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+const oldCompare=renderComparisons;
+renderComparisons=function(){oldCompare();const max=Math.max(1,...comparisons.flatMap(r=>[r.multiplier,r.imports/r.demand,r.valueAdded/r.demand]));$('ratio-chart').replaceChildren(...comparisons.map(r=>{const box=text('div',r.name+' · '+r.className);box.className='ratio-box';for(const [label,v,cls] of [['생산',r.multiplier,'prod'],['수입',r.imports/r.demand,'imp'],['부가가치',r.valueAdded/r.demand,'va']]){const line=text('div',label+' '+fmt(v));const track=text('div','');track.className='track';const fill=text('div','');fill.className='fill '+cls;fill.style.width=Math.max(0,v/max*100)+'%';track.append(fill);line.append(track);box.append(line);}return box;}));};
+$('compare-csv').onclick=()=>exportCSV('scenario-comparison.csv',[['시나리오','분류','산업','수요_백만원','생산_백만원','수입_백만원','부가가치_백만원','생산배수','수입유발률_%','부가가치유발률_%'],...comparisons.map(r=>[r.name,r.className,r.sectorNames,r.demand,r.production,r.imports,r.valueAdded,r.multiplier,100*r.imports/r.demand,100*r.valueAdded/r.demand])]);
+const ns='http://www.w3.org/2000/svg';function svgEl(tag,attrs,label){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);if(label!==undefined)e.textContent=label;return e;}
+function drawQuadrant(){const host=$('quadrant');host.replaceChildren();if(!linkageRows.length){$('quadrant-summary').textContent='연관도 계산 후 표시됩니다.';return;}const q=$('linkage-search').value.trim().toLowerCase();const rows=linkageRows.filter(r=>(r.code+' '+r.name).toLowerCase().includes(q));const lo=Math.min(0,...linkageRows.flatMap(r=>[r.power,r.sensitivity])),hi=Math.max(1.2,...linkageRows.flatMap(r=>[r.power,r.sensitivity]))*1.05;const x=v=>65+(v-lo)/(hi-lo)*665,y=v=>340-(v-lo)/(hi-lo)*290;const s=svgEl('svg',{viewBox:'0 0 780 390',xmlns:ns,role:'img','aria-label':'영향력계수와 감응도계수 산점도'});s.append(svgEl('rect',{width:780,height:390,fill:'#ffffff'}));for(const v of [lo,1,hi]){s.append(svgEl('line',{x1:x(v),x2:x(v),y1:50,y2:340,stroke:v===1?'#b45309':'#cbd5e1','stroke-dasharray':v===1?'6 4':'none'}),svgEl('line',{x1:65,x2:730,y1:y(v),y2:y(v),stroke:v===1?'#b45309':'#cbd5e1','stroke-dasharray':v===1?'6 4':'none'}),svgEl('text',{x:x(v),y:358,'text-anchor':'middle','font-size':12},fmt(v)),svgEl('text',{x:57,y:y(v)+4,'text-anchor':'end','font-size':12},fmt(v)));}s.append(svgEl('text',{x:390,y:382,'text-anchor':'middle','font-size':14},'영향력계수'),svgEl('text',{x:65,y:25,'font-size':14},'감응도계수'));let counts=[0,0,0,0];for(const r of rows){const i=(r.power>=1?1:0)+(r.sensitivity>=1?2:0);counts[i]++;const c=svgEl('circle',{cx:x(r.power),cy:y(r.sensitivity),r:4.5,fill:['#94a3b8','#2563eb','#d97706','#0f766e'][i],opacity:.8});c.append(svgEl('title',{},r.code+' '+r.name+' | 영향력 '+fmt(r.power)+' / 감응도 '+fmt(r.sensitivity)));s.append(c);}host.append(s);$('quadrant-summary').textContent=`검색 결과 ${rows.length}개 · 모두 1 미만 ${counts[0]} / 영향력만 1 이상 ${counts[1]} / 감응도만 1 이상 ${counts[2]} / 모두 1 이상 ${counts[3]}`;}
+const oldLinkage=renderLinkage;renderLinkage=function(){oldLinkage();drawQuadrant();};$('linkage-search').oninput=renderLinkage;$('linkage-sort').onchange=renderLinkage;$('classification').addEventListener('change',drawQuadrant);
+$('linkage-csv').onclick=()=>{if(linkageRows.length)exportCSV('linkage-'+currentClass+'.csv',[['코드','산업','영향력','감응도','열합','행합'],...linkageRows.map(r=>[r.code,r.name,r.power,r.sensitivity,r.columnSum,r.rowSum])]);};$('plot-download').onclick=()=>{const s=$('quadrant').querySelector('svg');if(!s)return;const u=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(s)],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=u;a.download='linkage-'+currentClass+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
